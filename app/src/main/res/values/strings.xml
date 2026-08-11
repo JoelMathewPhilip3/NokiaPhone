@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="device_admin_description">Allows double-tap on the launcher home screen to lock the device.</string>
+</resources>

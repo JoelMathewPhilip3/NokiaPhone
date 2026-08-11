@@ -1,6 +1,8 @@
 package com.retro.minimallauncher
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -8,7 +10,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
-import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -41,6 +42,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -62,22 +64,29 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.delay
 import java.time.Instant
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private var homeRequestCounter by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { RetroLauncherApp() }
+        setContent { RetroLauncherApp(homeRequestCounter) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) {
+            homeRequestCounter++
+        }
     }
 }
 
@@ -102,13 +111,14 @@ data class RecentCall(
     val timestamp: Long
 )
 
-enum class Screen { HOME, MENU, OPTIONS, DIALER, RECENTS, CONTACTS, CONTACT_DETAIL, SETTINGS }
+enum class Screen { MENU, OPTIONS, DIALER, RECENTS, CONTACTS, CONTACT_DETAIL, SETTINGS }
 
 enum class RetroTheme(val title: String, val bg: Color, val fg: Color, val accent: Color) {
     CLASSIC("Classic LCD", Color(0xFFB7C69A), Color(0xFF182015), Color(0xFF83966B)),
     GREEN("Green LCD", Color(0xFF9FBC83), Color(0xFF152114), Color(0xFF718D59)),
     AMBER("Amber", Color(0xFF211B11), Color(0xFFFFC766), Color(0xFF5C4520)),
-    NIGHT("Night", Color(0xFF101510), Color(0xFFD9E8CE), Color(0xFF344233))
+    NIGHT("Night", Color(0xFF101510), Color(0xFFD9E8CE), Color(0xFF344233)),
+    MONO("Monochrome", Color.Black, Color(0xFFF1F1F1), Color(0xFF252525))
 }
 
 private const val PREFS = "retro_launcher_prefs"
@@ -117,12 +127,13 @@ private const val KEY_THEME = "theme"
 private const val KEY_HAPTICS = "haptics"
 
 @Composable
-fun RetroLauncherApp() {
+fun RetroLauncherApp(homeRequestCounter: Int) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     val allApps = rememberLaunchableApps(context)
 
-    var screen by remember { mutableStateOf(Screen.HOME) }
+    var screen by remember { mutableStateOf(Screen.DIALER) }
+    LaunchedEffect(homeRequestCounter) { screen = Screen.DIALER }
     var selectedIndex by remember { mutableIntStateOf(0) }
     var selectedContact by remember { mutableStateOf<PhoneContact?>(null) }
     var hasContactsPermission by remember {
@@ -137,6 +148,13 @@ fun RetroLauncherApp() {
                 PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasPhonePermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var pendingCallNumber by remember { mutableStateOf<String?>(null) }
 
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -150,6 +168,17 @@ fun RetroLauncherApp() {
     ) { granted ->
         hasCallLogPermission = granted
         screen = Screen.RECENTS
+    }
+
+    val phonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasPhonePermission = granted
+        val number = pendingCallNumber
+        pendingCallNumber = null
+        if (granted && !number.isNullOrBlank()) {
+            placeCallDirectly(context, number)
+        }
     }
 
     val contacts = rememberPhoneContacts(context, hasContactsPermission)
@@ -201,6 +230,20 @@ fun RetroLauncherApp() {
         screen = Screen.CONTACT_DETAIL
     }
 
+    fun callNumber(number: String) {
+        if (number.isBlank()) return
+        if (hasPhonePermission) {
+            placeCallDirectly(context, number)
+        } else {
+            pendingCallNumber = number
+            phonePermissionLauncher.launch(Manifest.permission.CALL_PHONE)
+        }
+    }
+
+    fun lockScreen() {
+        lockScreenOrRequestAdmin(context)
+    }
+
     MaterialTheme {
         Surface(
             modifier = Modifier
@@ -209,44 +252,20 @@ fun RetroLauncherApp() {
             color = theme.bg
         ) {
             when (screen) {
-                Screen.HOME -> HomeScreen(
-                    theme = theme,
-                    notificationSummary = NotificationSummaryStore.summary,
-                    onMenu = { screen = Screen.MENU },
-                    onDialer = { screen = Screen.DIALER },
-                    onContacts = ::openContacts,
-                    onHomeSettings = { launchHomeSettings(context) }
-                )
-
                 Screen.MENU -> MenuScreen(
                     apps = visibleApps,
-                    selectedIndex = selectedIndex.coerceIn(0, visibleApps.size),
                     theme = theme,
                     haptics = haptics,
-                    onMove = { delta ->
-                        val count = visibleApps.size + 1 // apps + Options
-                        selectedIndex = (selectedIndex + delta + count) % count
-                    },
-                    onOpen = {
-                        if (selectedIndex == visibleApps.size) {
-                            screen = Screen.OPTIONS
-                        } else {
-                            visibleApps.getOrNull(selectedIndex)?.let { launchApp(context, it) }
-                        }
-                    },
                     onOptions = { screen = Screen.OPTIONS },
-                    onBack = { screen = Screen.HOME },
+                    onBack = { screen = Screen.DIALER },
                     onDialer = { screen = Screen.DIALER },
                     onHomeSettings = { launchHomeSettings(context) }
                 )
 
                 Screen.OPTIONS -> OptionsScreen(
                     theme = theme,
-                    notificationAccessEnabled = NotificationManagerCompat
-                        .getEnabledListenerPackages(context)
-                        .contains(context.packageName),
                     onSettings = { screen = Screen.SETTINGS },
-                    onNotificationAccess = { launchNotificationAccessSettings(context) },
+                    onLockSetup = { requestDeviceAdmin(context) },
                     onHomeSettings = { launchHomeSettings(context) },
                     onBack = { screen = Screen.MENU }
                 )
@@ -259,15 +278,16 @@ fun RetroLauncherApp() {
                     onFavorite = ::openContact,
                     onContacts = ::openContacts,
                     onRecents = ::openRecents,
-                    onCall = { number -> launchDialer(context, number) },
-                    onBack = { screen = Screen.HOME }
+                    onMenu = { screen = Screen.MENU },
+                    onCall = ::callNumber,
+                    onDoubleTapLock = ::lockScreen
                 )
 
                 Screen.RECENTS -> RecentsScreen(
                     calls = recentCalls,
                     permissionGranted = hasCallLogPermission,
                     theme = theme,
-                    onCall = { number -> launchDialer(context, number) },
+                    onCall = ::callNumber,
                     onBack = { screen = Screen.DIALER }
                 )
 
@@ -282,7 +302,7 @@ fun RetroLauncherApp() {
                 Screen.CONTACT_DETAIL -> ContactDetailScreen(
                     contact = selectedContact,
                     theme = theme,
-                    onCall = { number -> launchDialer(context, number) },
+                    onCall = ::callNumber,
                     onMessage = { number -> launchMessage(context, number) },
                     onBack = { screen = Screen.CONTACTS }
                 )
@@ -321,116 +341,10 @@ fun RetroLauncherApp() {
 }
 
 @Composable
-private fun HomeScreen(
-    theme: RetroTheme,
-    notificationSummary: NotificationSummary,
-    onMenu: () -> Unit,
-    onDialer: () -> Unit,
-    onContacts: () -> Unit,
-    onHomeSettings: () -> Unit
-) {
-    val now = rememberMinuteClock()
-    val battery = rememberBatteryPercent()
-    val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 22.dp, vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("▂▄▆", color = theme.fg, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
-            Text("$battery% ▰", color = theme.fg, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
-        }
-
-        Spacer(Modifier.height(32.dp))
-        Text(
-            now.format(timeFormatter),
-            color = theme.fg,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 34.sp
-        )
-        Text(
-            now.format(dateFormatter),
-            color = theme.fg,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 16.sp
-        )
-
-        Spacer(Modifier.height(16.dp))
-        if (notificationSummary.connected) {
-            if (notificationSummary.messageCount > 0) {
-                Text(
-                    "${notificationSummary.messageCount} Message${if (notificationSummary.messageCount == 1) "" else "s"}",
-                    color = theme.fg,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-            }
-            if (notificationSummary.missedCallCount > 0) {
-                Text(
-                    "${notificationSummary.missedCallCount} Missed Call${if (notificationSummary.missedCallCount == 1) "" else "s"}",
-                    color = theme.fg,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-            }
-        }
-
-        Spacer(Modifier.weight(1f))
-        Text(
-            "RETRO",
-            color = theme.fg,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 28.sp,
-            letterSpacing = 4.sp
-        )
-        Text(
-            "MINIMAL MODE",
-            color = theme.fg.copy(alpha = 0.72f),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp
-        )
-        Spacer(Modifier.weight(1f))
-
-        SoftKeyRow(
-            left = "Menu",
-            center = "Contacts",
-            right = "Dial",
-            theme = theme,
-            onLeft = onMenu,
-            onCenter = onContacts,
-            onRight = onDialer
-        )
-        Text(
-            "Long-press launcher icon/home gesture for Android Home settings",
-            color = theme.fg.copy(alpha = 0.5f),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 8.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.clickable { onHomeSettings() }.padding(top = 3.dp)
-        )
-    }
-}
-
-@Composable
 private fun MenuScreen(
     apps: List<LaunchableApp>,
-    selectedIndex: Int,
     theme: RetroTheme,
     haptics: Boolean,
-    onMove: (Int) -> Unit,
-    onOpen: () -> Unit,
     onOptions: () -> Unit,
     onBack: () -> Unit,
     onDialer: () -> Unit,
@@ -439,21 +353,43 @@ private fun MenuScreen(
     val feedback = LocalHapticFeedback.current
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    var query by remember { mutableStateOf("") }
+    var selectedIndex by remember { mutableIntStateOf(0) }
+
+    val filteredApps = remember(apps, query) {
+        if (query.isBlank()) apps else apps.filter { appMatchesT9(it, query) }
+    }
+    val totalRows = filteredApps.size + 1 // Options always stays available.
 
     fun buzz() {
         if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }
 
-    LaunchedEffect(selectedIndex, apps.size) {
-        val first = listState.firstVisibleItemIndex
-        val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: first
-        if (selectedIndex < first || selectedIndex > last) {
-            listState.scrollToItem(selectedIndex)
+    fun move(delta: Int) {
+        if (totalRows <= 0) return
+        selectedIndex = (selectedIndex + delta + totalRows) % totalRows
+    }
+
+    fun openSelected() {
+        if (selectedIndex == filteredApps.size) {
+            onOptions()
+        } else {
+            filteredApps.getOrNull(selectedIndex)?.let { launchApp(context, it) }
         }
     }
 
-    val totalRows = apps.size + 1 // Options is always the final entry
-    val visibleRows = totalRows.coerceIn(1, 8)
+    LaunchedEffect(filteredApps.size, query) {
+        if (selectedIndex > filteredApps.size) selectedIndex = 0
+    }
+    LaunchedEffect(selectedIndex, filteredApps.size) {
+        if (totalRows > 0) {
+            val first = listState.firstVisibleItemIndex
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: first
+            if (selectedIndex < first || selectedIndex > last) listState.scrollToItem(selectedIndex)
+        }
+    }
+
+    val visibleRows = totalRows.coerceIn(1, 7)
     val menuHeight = (visibleRows * 46 + 18).dp
 
     Column(
@@ -470,7 +406,48 @@ private fun MenuScreen(
             fontSize = 24.sp,
             letterSpacing = 1.sp
         )
-        Spacer(Modifier.height(9.dp))
+        Spacer(Modifier.height(7.dp))
+
+        BasicTextField(
+            value = query,
+            onValueChange = { value -> query = value.filter(Char::isDigit).take(12) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .border(1.dp, theme.fg, RoundedCornerShape(4.dp))
+                .padding(horizontal = 10.dp),
+            singleLine = true,
+            textStyle = TextStyle(
+                color = theme.fg,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            ),
+            decorationBox = { innerTextField ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+                    if (query.isBlank()) {
+                        Text(
+                            "T9 app search — tap and type numbers",
+                            color = theme.fg.copy(alpha = 0.55f),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        )
+        if (query.isNotBlank()) {
+            Text(
+                "${filteredApps.size} match${if (filteredApps.size == 1) "" else "es"}",
+                color = theme.fg.copy(alpha = 0.58f),
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                modifier = Modifier.fillMaxWidth().padding(top = 3.dp)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
 
         Box(
             modifier = Modifier
@@ -480,18 +457,20 @@ private fun MenuScreen(
                 .padding(7.dp)
         ) {
             LazyColumn(state = listState) {
-                itemsIndexed(items = apps, key = { _, app -> app.packageName }) { index, app ->
+                itemsIndexed(items = filteredApps, key = { _, app -> app.packageName }) { index, app ->
                     val selected = index == selectedIndex
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
                             .background(
-                                if (selected) theme.accent.copy(alpha = 0.42f)
-                                else Color.Transparent,
+                                if (selected) theme.accent.copy(alpha = 0.42f) else Color.Transparent,
                                 RoundedCornerShape(3.dp)
                             )
-                            .clickable { launchApp(context, app) }
+                            .clickable {
+                                selectedIndex = index
+                                launchApp(context, app)
+                            }
                             .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -513,17 +492,19 @@ private fun MenuScreen(
                     }
                 }
                 item(key = "__options__") {
-                    val selected = selectedIndex == apps.size
+                    val selected = selectedIndex == filteredApps.size
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
                             .background(
-                                if (selected) theme.accent.copy(alpha = 0.42f)
-                                else Color.Transparent,
+                                if (selected) theme.accent.copy(alpha = 0.42f) else Color.Transparent,
                                 RoundedCornerShape(3.dp)
                             )
-                            .clickable { onOptions() }
+                            .clickable {
+                                selectedIndex = filteredApps.size
+                                onOptions()
+                            }
                             .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -546,25 +527,30 @@ private fun MenuScreen(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(7.dp))
         SoftKeyRow(
-            left = "Dial",
+            left = if (query.isBlank()) "Dial" else "Clear",
             center = "Select",
             right = "Back",
             theme = theme,
-            onLeft = onDialer,
-            onCenter = onOpen,
+            onLeft = {
+                if (query.isBlank()) onDialer() else {
+                    query = ""
+                    selectedIndex = 0
+                }
+            },
+            onCenter = ::openSelected,
             onRight = onBack
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(7.dp))
         DirectionPad(
             theme = theme,
-            onUp = { buzz(); onMove(-1) },
-            onDown = { buzz(); onMove(1) },
-            onLeft = { buzz(); onMove(-1) },
-            onRight = { buzz(); onMove(1) },
-            onCenter = { buzz(); onOpen() },
+            onUp = { buzz(); move(-1) },
+            onDown = { buzz(); move(1) },
+            onLeft = { buzz(); move(-1) },
+            onRight = { buzz(); move(1) },
+            onCenter = { buzz(); openSelected() },
             onCenterLong = onHomeSettings
         )
         Spacer(Modifier.weight(1f))
@@ -666,8 +652,9 @@ private fun DialerScreen(
     onFavorite: (PhoneContact) -> Unit,
     onContacts: () -> Unit,
     onRecents: () -> Unit,
+    onMenu: () -> Unit,
     onCall: (String) -> Unit,
-    onBack: () -> Unit
+    onDoubleTapLock: () -> Unit
 ) {
     var number by remember { mutableStateOf("") }
     val feedback = LocalHapticFeedback.current
@@ -688,7 +675,11 @@ private fun DialerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .combinedClickable(
+                onClick = { },
+                onDoubleClick = onDoubleTapLock
+            )
+            .padding(horizontal = 16.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -701,11 +692,11 @@ private fun DialerScreen(
                 color = theme.fg,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp
+                fontSize = 21.sp
             )
             Text(
-                "Back",
-                modifier = Modifier.clickable { onBack() }.padding(6.dp),
+                "Menu",
+                modifier = Modifier.clickable { onMenu() }.padding(5.dp),
                 color = theme.fg,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold
@@ -720,13 +711,14 @@ private fun DialerScreen(
             fontSize = 10.sp,
             modifier = Modifier.fillMaxWidth()
         )
+
         if (!contactsEnabled) {
             Text(
-                "Contacts access off — tap Contacts below to enable",
+                "Contacts access off — tap More Contacts to enable",
                 color = theme.fg.copy(alpha = 0.62f),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 9.sp,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
             )
         } else if (favoriteContacts.isEmpty()) {
             Text(
@@ -734,13 +726,13 @@ private fun DialerScreen(
                 color = theme.fg.copy(alpha = 0.62f),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 9.sp,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
             )
         } else {
-            favoriteContacts.take(4).chunked(2).forEach { rowContacts ->
+            favoriteContacts.take(8).chunked(2).forEach { rowContacts ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     rowContacts.forEach { contact ->
                         FavoriteContactButton(contact, theme, Modifier.weight(1f)) {
@@ -749,16 +741,29 @@ private fun DialerScreen(
                     }
                     if (rowContacts.size == 1) Spacer(Modifier.weight(1f))
                 }
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(4.dp))
             }
         }
+
+        Text(
+            text = if (favoriteContacts.size > 8) "More Contacts  •  ${favoriteContacts.size - 8} more favorites" else "More Contacts",
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onContacts() }
+                .padding(vertical = 4.dp),
+            color = theme.fg,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp,
+            textAlign = TextAlign.Center
+        )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(58.dp)
+                .height(50.dp)
                 .border(2.dp, theme.fg, RoundedCornerShape(4.dp))
-                .padding(8.dp),
+                .padding(7.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -766,39 +771,48 @@ private fun DialerScreen(
                 color = theme.fg,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = 21.sp,
+                fontSize = 20.sp,
                 textAlign = TextAlign.Center,
                 maxLines = 1
             )
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         keys.chunked(3).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 row.forEach { (digit, letters) ->
                     DialKey(digit, letters, theme, Modifier.weight(1f)) { press(digit) }
                 }
             }
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(5.dp))
         }
 
         Spacer(Modifier.weight(1f))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            RetroButton("Contacts", theme, Modifier.weight(1.1f), onContacts)
-            RetroButton("Recents", theme, Modifier.weight(1.05f), onRecents)
-            RetroButton("⌫", theme, Modifier.weight(0.62f)) {
+            RetroButton("Menu", theme, Modifier.weight(0.8f), onMenu)
+            RetroButton("Contacts", theme, Modifier.weight(1.15f), onContacts)
+            RetroButton("Recents", theme, Modifier.weight(1.0f), onRecents)
+            RetroButton("⌫", theme, Modifier.weight(0.55f)) {
                 if (number.isNotEmpty()) number = number.dropLast(1)
             }
-            RetroButton("☎", theme, Modifier.weight(0.75f)) {
+            RetroButton("CALL", theme, Modifier.weight(0.85f)) {
                 if (number.isNotBlank()) onCall(number)
             }
         }
+        Text(
+            "Double-tap empty space to lock",
+            color = theme.fg.copy(alpha = 0.45f),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 8.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        )
     }
 }
 
@@ -811,7 +825,7 @@ private fun FavoriteContactButton(
 ) {
     Box(
         modifier = modifier
-            .height(36.dp)
+            .height(30.dp)
             .border(1.dp, theme.fg.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
             .clickable { onClick() }
             .padding(horizontal = 7.dp),
@@ -821,7 +835,7 @@ private fun FavoriteContactButton(
             "★ ${contact.name}",
             color = theme.fg,
             fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1
         )
@@ -838,7 +852,7 @@ private fun DialKey(
 ) {
     Box(
         modifier = modifier
-            .height(54.dp)
+            .height(48.dp)
             .border(2.dp, theme.fg, RoundedCornerShape(8.dp))
             .clickable { onClick() },
         contentAlignment = Alignment.Center
@@ -866,9 +880,8 @@ private fun DialKey(
 @Composable
 private fun OptionsScreen(
     theme: RetroTheme,
-    notificationAccessEnabled: Boolean,
     onSettings: () -> Unit,
-    onNotificationAccess: () -> Unit,
+    onLockSetup: () -> Unit,
     onHomeSettings: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -888,20 +901,8 @@ private fun OptionsScreen(
         Spacer(Modifier.height(18.dp))
         RetroButton("Launcher Settings", theme, Modifier.fillMaxWidth(), onSettings)
         Spacer(Modifier.height(8.dp))
-        RetroButton(
-            if (notificationAccessEnabled) "Notification Counts: Enabled" else "Enable Notification Counts",
-            theme,
-            Modifier.fillMaxWidth(),
-            onNotificationAccess
-        )
-        Text(
-            "Only message and missed-call counts are shown; notification text is never displayed.",
-            color = theme.fg.copy(alpha = 0.62f),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 9.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-        )
+        RetroButton("Enable Double-Tap Lock", theme, Modifier.fillMaxWidth(), onLockSetup)
+        Spacer(Modifier.height(8.dp))
         RetroButton("Android Home Settings", theme, Modifier.fillMaxWidth(), onHomeSettings)
         Spacer(Modifier.weight(1f))
         RetroButton("BACK TO MENU", theme, Modifier.fillMaxWidth(), onBack)
@@ -1020,7 +1021,7 @@ private fun RecentsScreen(
                 }
             }
             Text(
-                "Tap an entry to open it in the system dialer.",
+                "Tap an entry to call directly.",
                 color = theme.fg.copy(alpha = 0.5f),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 8.sp,
@@ -1447,53 +1448,6 @@ private fun RetroButton(
 }
 
 @Composable
-private fun rememberMinuteClock(): LocalDateTime {
-    var now by remember { mutableStateOf(LocalDateTime.now()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            val millisUntilNextMinute = 60_000L - (System.currentTimeMillis() % 60_000L) + 50L
-            delay(millisUntilNextMinute)
-            now = LocalDateTime.now()
-        }
-    }
-
-    return now
-}
-
-@Composable
-private fun rememberBatteryPercent(): Int {
-    val context = LocalContext.current.applicationContext
-    var batteryPercent by remember { mutableIntStateOf(readBatteryPercent(context)) }
-
-    DisposableEffect(context) {
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(receiverContext: Context?, intent: Intent?) {
-                if (intent?.action == Intent.ACTION_BATTERY_CHANGED) {
-                    batteryPercent = batteryPercentFromIntent(intent)
-                }
-            }
-        }
-
-        ContextCompat.registerReceiver(
-            context,
-            receiver,
-            filter,
-            ContextCompat.RECEIVER_EXPORTED
-        )?.let { sticky ->
-            batteryPercent = batteryPercentFromIntent(sticky)
-        }
-
-        onDispose {
-            runCatching { context.unregisterReceiver(receiver) }
-        }
-    }
-
-    return batteryPercent
-}
-
-@Composable
 private fun rememberLaunchableApps(context: Context): List<LaunchableApp> {
     val appContext = context.applicationContext
     var apps by remember { mutableStateOf(loadLaunchableApps(appContext)) }
@@ -1702,13 +1656,32 @@ private fun loadPhoneContacts(context: Context): List<PhoneContact> {
 }
 
 private fun defaultSelectedPackages(apps: List<LaunchableApp>): Set<String> {
-    val wanted = listOf("phone", "messages", "camera", "maps", "whatsapp", "music", "spotify")
+    val wanted = listOf("messages", "camera", "maps", "whatsapp", "music", "spotify")
     val matches = apps.filter { app ->
         wanted.any { key -> app.label.lowercase(Locale.getDefault()).contains(key) }
     }
     return (if (matches.isNotEmpty()) matches.take(7) else apps.take(6))
         .map { it.packageName }
         .toSet()
+}
+
+private fun appMatchesT9(app: LaunchableApp, query: String): Boolean {
+    val cleanQuery = query.filter(Char::isDigit)
+    if (cleanQuery.isBlank()) return true
+
+    fun digitsFor(text: String): String = text
+        .filter(Char::isLetterOrDigit)
+        .uppercase(Locale.getDefault())
+        .mapNotNull(::letterToT9Digit)
+        .joinToString("")
+
+    val wholeLabelMatch = digitsFor(app.label).startsWith(cleanQuery)
+    val wordMatch = app.label
+        .split(Regex("[^A-Za-z0-9]+"))
+        .filter { it.isNotBlank() }
+        .any { digitsFor(it).startsWith(cleanQuery) }
+
+    return wholeLabelMatch || wordMatch
 }
 
 private fun contactMatchesSearch(contact: PhoneContact, query: String): Boolean {
@@ -1771,23 +1744,50 @@ private fun launchApp(context: Context, app: LaunchableApp) {
     }
 }
 
-private fun launchDialer(context: Context, number: String = "") {
+private fun placeCallDirectly(context: Context, number: String) {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) !=
+        PackageManager.PERMISSION_GRANTED
+    ) return
+
     runCatching {
-        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")))
+        context.startActivity(
+            Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(number)}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
+private fun requestDeviceAdmin(context: Context) {
+    val admin = ComponentName(context, LockDeviceAdminReceiver::class.java)
+    val manager = context.getSystemService(DevicePolicyManager::class.java)
+    if (manager.isAdminActive(admin)) return
+
+    runCatching {
+        context.startActivity(
+            Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
+                putExtra(
+                    DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Allow Retro Minimal Launcher to lock the screen when you double-tap the Phone home screen."
+                )
+            }
+        )
+    }
+}
+
+private fun lockScreenOrRequestAdmin(context: Context) {
+    val admin = ComponentName(context, LockDeviceAdminReceiver::class.java)
+    val manager = context.getSystemService(DevicePolicyManager::class.java)
+    if (manager.isAdminActive(admin)) {
+        runCatching { manager.lockNow() }
+    } else {
+        requestDeviceAdmin(context)
     }
 }
 
 private fun launchMessage(context: Context, number: String) {
     runCatching {
         context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:${Uri.encode(number)}")))
-    }
-}
-
-private fun launchNotificationAccessSettings(context: Context) {
-    runCatching {
-        context.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-    }.recoverCatching {
-        context.startActivity(Intent(Settings.ACTION_SETTINGS))
     }
 }
 
@@ -1798,16 +1798,4 @@ private fun launchHomeSettings(context: Context) {
     )
     intents.firstOrNull { it.resolveActivity(context.packageManager) != null }
         ?.let { context.startActivity(it) }
-}
-
-private fun readBatteryPercent(context: Context): Int {
-    val manager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-    return manager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).coerceIn(0, 100)
-}
-
-private fun batteryPercentFromIntent(intent: Intent): Int {
-    val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-    val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-    if (level < 0 || scale <= 0) return 0
-    return ((level * 100f) / scale).toInt().coerceIn(0, 100)
 }

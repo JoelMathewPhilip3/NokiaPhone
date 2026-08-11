@@ -1,57 +1,60 @@
-# Retro Minimal Launcher — V1.3
+# Retro Minimal Launcher V1.5
 
-A battery-conscious Android launcher inspired by classic feature-phone interaction. It keeps the home screen simple while still providing quick access to selected Android apps, contacts, favorites, the dialer, recent calls, and minimal notification counts.
+A lightweight Android HOME launcher inspired by classic feature phones. The Phone/Dialer screen is the actual home screen.
 
-## V1.3 highlights
+## V1.5 changes
+
+- Favorites area now supports up to 8 starred contacts in a compact 2-column grid.
+- `More Contacts` sits directly below Favorites and opens the full contacts list.
+- Menu now includes T9 app search. Tap the search box and type number sequences such as `6277` for Maps. Word-prefix matching also works for app names such as Music inside `Amazon Music`.
+- Added a true `Monochrome` theme: black background, off-white foreground, minimal gray selection accent.
+- Added double-tap-to-lock on the Phone home screen.
+  - Open `Menu -> Options -> Enable Double-Tap Lock` once and approve Android's Device Administrator prompt.
+  - After that, double-tap empty space on the Phone home screen to lock immediately.
+  - The launcher only declares the `force-lock` device-admin policy.
+- Added a real `CALL` button on the dialer.
+  - The first call requests Android's Phone permission.
+  - After permission is granted, pressing `CALL` places the entered number directly instead of first opening the separate dialer app.
+  - Android's normal in-call screen still appears after the call starts.
+- Calls from Recents and Contact Details now use the same direct-call flow.
+- The system Phone app is no longer part of the fresh-install default app selection, though it can still be enabled manually in Launcher Settings.
+
+## Existing features
 
 - Real Android HOME launcher
-- Retro LCD-style themes with Night as the fresh-install default
-- Minimal home screen with time, date, battery, message count, and missed-call count
-- Notification contents are never shown by the launcher; only active message/missed-call notification counts are summarized
-- Optional Android Notification Access, enabled from Menu → Options
-- Built-in dialer UI that hands calls to Android's system dialer
-- Starred Android contacts shown as Favorites
-- Full lightweight Contacts screen with T9/name/number search
-- Contact Call and Message actions
-- Optional Recents screen showing up to 20 recent calls
-- Recents refreshes from Android's call-log content observer rather than polling
-- Selected-app menu with Options permanently placed at the bottom
-- Launcher Settings moved behind Menu → Options → Launcher Settings
-- D-pad navigation and optional haptics
-- No network permission, analytics, location, WorkManager jobs, foreground services, or continuous animation
-- Clock refreshes only once per minute
-- Battery state uses Android battery broadcasts
-- Installed apps refresh only on package changes
-- Contacts refresh only on Contacts Provider changes
+- Dialer as home screen
+- Contacts and starred favorites
+- T9 contact search
+- Recent calls
+- Direct message shortcut from contact details
+- Selectable minimal app menu
+- D-pad navigation
+- Classic LCD, Green LCD, Amber, Night and Monochrome themes
+- Haptics optional and off by default
+- No notification listener
+- No network permission
+- No location permission
+- No background service or WorkManager polling
 
-## Permissions / access
+## Permissions
 
-### Contacts
-`READ_CONTACTS` is requested only when Contacts is opened. It is used for the in-launcher contact list, T9 search, and starred favorites.
+- `READ_CONTACTS` — only requested when Contacts are opened.
+- `READ_CALL_LOG` — only requested when Recents are opened.
+- `CALL_PHONE` — only requested when you first press CALL.
+- Device Administrator — optional and used only for double-tap screen locking.
 
-### Recent calls
-`READ_CALL_LOG` is requested only when Recents is opened. It is used to display a short local recent-call list. Some Android distributions/install methods can restrict call-log access, and Google Play applies additional policy requirements to apps requesting call-log permissions. The rest of the launcher works if this permission is unavailable.
+## Build
 
-### Notification counts
-Notification Access is optional and must be enabled explicitly in Android settings from Menu → Options → Enable Notification Counts. The listener counts active notifications categorized by Android as messages or missed calls. It does not display notification titles, message bodies, senders, or other notification content.
-
-## Build on GitHub
-
-The existing `.github/workflows/android.yml` from V1/V1.2 does not need to change. Build with:
+The existing GitHub Actions `android.yml` does not need to change.
 
 ```bash
 gradle :app:assembleDebug
 ```
 
-The debug APK is generated at:
+The debug APK will be produced under:
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
-```
+`app/build/outputs/apk/debug/app-debug.apk`
 
-## Version
+## Notes
 
-- Version code: 4
-- Version name: 1.3.0
-- Minimum Android: API 26 / Android 8.0
-- Target/compile SDK: 36
+Device Administrator is an Android system capability. If your device requires it, you may need to disable Retro Minimal Launcher as a device administrator before uninstalling it.
