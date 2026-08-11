@@ -103,7 +103,7 @@ private class SnakeGameModel(initialHighScore: Int) {
         }
     }
 
-    fun setDirection(next: SnakeDirection) {
+    fun requestDirection(next: SnakeDirection) {
         if (phase != SnakePhase.PLAYING && phase != SnakePhase.COUNTDOWN) return
         if (!isOpposite(direction, next)) queuedDirection = next
     }
@@ -390,10 +390,10 @@ internal fun SnakeScreen(windowFocused: Boolean, onBack: () -> Unit) {
 
         Spacer(Modifier.height(7.dp))
         SnakeDirectionPad(
-            onUp = { model.setDirection(SnakeDirection.UP) },
-            onDown = { model.setDirection(SnakeDirection.DOWN) },
-            onLeft = { model.setDirection(SnakeDirection.LEFT) },
-            onRight = { model.setDirection(SnakeDirection.RIGHT) },
+            onUp = { model.requestDirection(SnakeDirection.UP) },
+            onDown = { model.requestDirection(SnakeDirection.DOWN) },
+            onLeft = { model.requestDirection(SnakeDirection.LEFT) },
+            onRight = { model.requestDirection(SnakeDirection.RIGHT) },
             onCenter = { model.togglePause() }
         )
 

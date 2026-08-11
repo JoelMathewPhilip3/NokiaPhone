@@ -1,8 +1,8 @@
-# Retro Minimal Launcher V1.6.0
+# Retro Minimal Launcher V1.6.1.1
 
 A battery-conscious Android HOME launcher inspired by classic feature phones.
 
-## V1.6.0 — Retro Snake
+## V1.6.1.1 — Retro Snake
 
 Snake is deliberately tucked away under `Menu -> Options -> Snake`; it is not shown on the main Home/Menu screen and does not run when you are outside the game.
 
