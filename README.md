@@ -1,97 +1,57 @@
-# Retro Minimal Launcher — V1
+# Retro Minimal Launcher — V1.3
 
-A distraction-reducing Android launcher inspired by the simplicity and navigation style of classic feature phones. It intentionally avoids Nokia logos, copyrighted UI assets, and brand-specific graphics.
+A battery-conscious Android launcher inspired by classic feature-phone interaction. It keeps the home screen simple while still providing quick access to selected Android apps, contacts, favorites, the dialer, recent calls, and minimal notification counts.
 
-## V1 features
+## V1.3 highlights
 
-- Real Android **HOME launcher** (can be selected as the default Home app)
-- Minimal home screen with time, date, battery, faux signal indicator, and one-tap retro dialer
-- Retro monochrome UI with four themes: Classic LCD, Green LCD, Amber, and Night
-- User-selectable list of visible apps; everything else stays out of the main launcher menu
-- Direction-pad style navigation with a center Select button
-- Long-press center key shortcut to Android Home settings
-- Built-in retro numeric keypad that hands the entered number to the system dialer; no phone permission required
-- Optional key haptics
-- GitHub Actions workflow that builds a debug APK
-- No analytics, ads, accounts, network permissions, or tracking
+- Real Android HOME launcher
+- Retro LCD-style themes with Night as the fresh-install default
+- Minimal home screen with time, date, battery, message count, and missed-call count
+- Notification contents are never shown by the launcher; only active message/missed-call notification counts are summarized
+- Optional Android Notification Access, enabled from Menu → Options
+- Built-in dialer UI that hands calls to Android's system dialer
+- Starred Android contacts shown as Favorites
+- Full lightweight Contacts screen with T9/name/number search
+- Contact Call and Message actions
+- Optional Recents screen showing up to 20 recent calls
+- Recents refreshes from Android's call-log content observer rather than polling
+- Selected-app menu with Options permanently placed at the bottom
+- Launcher Settings moved behind Menu → Options → Launcher Settings
+- D-pad navigation and optional haptics
+- No network permission, analytics, location, WorkManager jobs, foreground services, or continuous animation
+- Clock refreshes only once per minute
+- Battery state uses Android battery broadcasts
+- Installed apps refresh only on package changes
+- Contacts refresh only on Contacts Provider changes
 
-## Recommended development setup
+## Permissions / access
 
-- Android Studio with JDK 17
-- Android SDK 36
-- Gradle 8.13
-- Android Gradle Plugin 8.13.2
-- Kotlin 2.3.21
-- Jetpack Compose BOM 2026.06.01
+### Contacts
+`READ_CONTACTS` is requested only when Contacts is opened. It is used for the in-launcher contact list, T9 search, and starred favorites.
 
-## Run locally
+### Recent calls
+`READ_CALL_LOG` is requested only when Recents is opened. It is used to display a short local recent-call list. Some Android distributions/install methods can restrict call-log access, and Google Play applies additional policy requirements to apps requesting call-log permissions. The rest of the launcher works if this permission is unavailable.
 
-1. Clone or unzip this repository.
-2. Open the root folder in Android Studio.
-3. Allow Gradle sync to finish.
-4. Run the `app` configuration on an Android device or emulator (Android 8.0+).
-5. Press the device Home button.
-6. Choose **Retro Minimal Launcher** and select **Always** if you want it as the default launcher.
-
-If Android does not prompt you, open **Settings → Apps → Default apps → Home app** and select Retro Minimal Launcher.
+### Notification counts
+Notification Access is optional and must be enabled explicitly in Android settings from Menu → Options → Enable Notification Counts. The listener counts active notifications categorized by Android as messages or missed calls. It does not display notification titles, message bodies, senders, or other notification content.
 
 ## Build on GitHub
 
-Push the project to a GitHub repository. The included workflow at `.github/workflows/android.yml` runs automatically on pushes to `main` or `master`, on pull requests, and manually through **Actions → Android Build → Run workflow**.
-
-The resulting APK is uploaded as the workflow artifact:
-
-`retro-minimal-launcher-debug-apk`
-
-You can also build from a machine with Gradle 8.13 installed:
+The existing `.github/workflows/android.yml` from V1/V1.2 does not need to change. Build with:
 
 ```bash
 gradle :app:assembleDebug
 ```
 
-The APK will be created at:
+The debug APK is generated at:
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Project structure
+## Version
 
-```text
-NokiaMinimalLauncher/
-├── .github/workflows/android.yml
-├── app/
-│   ├── build.gradle.kts
-│   └── src/main/
-│       ├── AndroidManifest.xml
-│       ├── java/com/retro/minimallauncher/MainActivity.kt
-│       └── res/
-├── build.gradle.kts
-├── gradle.properties
-├── settings.gradle.kts
-├── LICENSE
-└── README.md
-```
-
-## V1 design decisions
-
-This version launches the user's existing Phone, Messages, Camera, Maps, WhatsApp, Music, and other Android apps rather than rebuilding those applications. That keeps the launcher useful, small, and permission-light.
-
-The app list is configurable rather than hard-coded. On first run, the launcher tries to preselect common essentials based on their displayed labels. Users can change the visible list at any time in Settings.
-
-## Suggested V2 roadmap
-
-- True T9 app search
-- Notification count / intentionally simplified notification inbox
-- Work / Weekend profiles with different allowed-app sets
-- Optional app-opening delay for distracting apps
-- Custom retro bitmap font bundled under an appropriate license
-- Icon abstraction so modern app icons can be represented by monochrome glyphs
-- Favorite contacts / speed dial
-- Screen-time summary without gamification
-- Better keyboard / D-pad accessibility support
-- Instrumented UI tests and screenshot tests
-
-## Notes
-
-This project is an independent retro-style launcher. "Nokia" is not used in the app name, package name, artwork, or UI branding. If you publish it, keep the branding distinct and review any assets you add for licensing/trademark issues.
+- Version code: 4
+- Version name: 1.3.0
+- Minimum Android: API 26 / Android 8.0
+- Target/compile SDK: 36
