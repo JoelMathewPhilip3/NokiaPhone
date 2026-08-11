@@ -132,8 +132,8 @@ fun RetroLauncherApp(homeRequestCounter: Int) {
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     val allApps = rememberLaunchableApps(context)
 
-    var screen by remember { mutableStateOf(Screen.DIALER) }
-    LaunchedEffect(homeRequestCounter) { screen = Screen.DIALER }
+    var screen by remember { mutableStateOf(Screen.MENU) }
+    LaunchedEffect(homeRequestCounter) { screen = Screen.MENU }
     var selectedIndex by remember { mutableIntStateOf(0) }
     var selectedContact by remember { mutableStateOf<PhoneContact?>(null) }
     var hasContactsPermission by remember {
@@ -257,7 +257,7 @@ fun RetroLauncherApp(homeRequestCounter: Int) {
                     theme = theme,
                     haptics = haptics,
                     onOptions = { screen = Screen.OPTIONS },
-                    onBack = { screen = Screen.DIALER },
+                    onBack = { screen = Screen.MENU },
                     onDialer = { screen = Screen.DIALER },
                     onHomeSettings = { launchHomeSettings(context) }
                 )
