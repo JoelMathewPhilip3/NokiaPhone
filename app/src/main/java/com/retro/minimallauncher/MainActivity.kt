@@ -76,10 +76,16 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private var homeRequestCounter by mutableIntStateOf(0)
+    private var windowFocused by mutableStateOf(true)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { RetroLauncherApp(homeRequestCounter) }
+        setContent { RetroLauncherApp(homeRequestCounter, windowFocused) }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        windowFocused = hasFocus
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -111,7 +117,7 @@ data class RecentCall(
     val timestamp: Long
 )
 
-enum class Screen { MENU, OPTIONS, DIALER, RECENTS, CONTACTS, CONTACT_DETAIL, SETTINGS }
+enum class Screen { MENU, OPTIONS, SNAKE, DIALER, RECENTS, CONTACTS, CONTACT_DETAIL, SETTINGS }
 
 enum class RetroTheme(val title: String, val bg: Color, val fg: Color, val accent: Color) {
     CLASSIC("Classic LCD", Color(0xFFB7C69A), Color(0xFF182015), Color(0xFF83966B)),
@@ -127,7 +133,7 @@ private const val KEY_THEME = "theme"
 private const val KEY_HAPTICS = "haptics"
 
 @Composable
-fun RetroLauncherApp(homeRequestCounter: Int) {
+fun RetroLauncherApp(homeRequestCounter: Int, windowFocused: Boolean) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     val allApps = rememberLaunchableApps(context)
@@ -248,6 +254,10 @@ fun RetroLauncherApp(homeRequestCounter: Int) {
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .combinedClickable(
+                    onClick = { },
+                    onDoubleClick = ::lockScreen
+                )
                 .safeDrawingPadding(),
             color = theme.bg
         ) {
@@ -265,9 +275,15 @@ fun RetroLauncherApp(homeRequestCounter: Int) {
                 Screen.OPTIONS -> OptionsScreen(
                     theme = theme,
                     onSettings = { screen = Screen.SETTINGS },
+                    onSnake = { screen = Screen.SNAKE },
                     onLockSetup = { requestDeviceAdmin(context) },
                     onHomeSettings = { launchHomeSettings(context) },
                     onBack = { screen = Screen.MENU }
+                )
+
+                Screen.SNAKE -> SnakeScreen(
+                    windowFocused = windowFocused,
+                    onBack = { screen = Screen.OPTIONS }
                 )
 
                 Screen.DIALER -> DialerScreen(
@@ -279,8 +295,7 @@ fun RetroLauncherApp(homeRequestCounter: Int) {
                     onContacts = ::openContacts,
                     onRecents = ::openRecents,
                     onMenu = { screen = Screen.MENU },
-                    onCall = ::callNumber,
-                    onDoubleTapLock = ::lockScreen
+                    onCall = ::callNumber
                 )
 
                 Screen.RECENTS -> RecentsScreen(
@@ -653,8 +668,7 @@ private fun DialerScreen(
     onContacts: () -> Unit,
     onRecents: () -> Unit,
     onMenu: () -> Unit,
-    onCall: (String) -> Unit,
-    onDoubleTapLock: () -> Unit
+    onCall: (String) -> Unit
 ) {
     var number by remember { mutableStateOf("") }
     val feedback = LocalHapticFeedback.current
@@ -675,10 +689,6 @@ private fun DialerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .combinedClickable(
-                onClick = { },
-                onDoubleClick = onDoubleTapLock
-            )
             .padding(horizontal = 16.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -881,6 +891,7 @@ private fun DialKey(
 private fun OptionsScreen(
     theme: RetroTheme,
     onSettings: () -> Unit,
+    onSnake: () -> Unit,
     onLockSetup: () -> Unit,
     onHomeSettings: () -> Unit,
     onBack: () -> Unit
@@ -900,6 +911,8 @@ private fun OptionsScreen(
         )
         Spacer(Modifier.height(18.dp))
         RetroButton("Launcher Settings", theme, Modifier.fillMaxWidth(), onSettings)
+        Spacer(Modifier.height(8.dp))
+        RetroButton("Snake", theme, Modifier.fillMaxWidth(), onSnake)
         Spacer(Modifier.height(8.dp))
         RetroButton("Enable Double-Tap Lock", theme, Modifier.fillMaxWidth(), onLockSetup)
         Spacer(Modifier.height(8.dp))
@@ -1768,7 +1781,7 @@ private fun requestDeviceAdmin(context: Context) {
                 putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
                 putExtra(
                     DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                    "Allow Retro Minimal Launcher to lock the screen when you double-tap the Phone home screen."
+                    "Allow Retro Minimal Launcher to lock the screen when you double-tap empty launcher space."
                 )
             }
         )

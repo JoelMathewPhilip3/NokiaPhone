@@ -1,46 +1,69 @@
-# Retro Minimal Launcher V1.4
+# Retro Minimal Launcher V1.6.0
 
 A battery-conscious Android HOME launcher inspired by classic feature phones.
 
-## V1.4 changes
+## V1.6.0 — Retro Snake
 
-- The Phone/Dialer screen is now the launcher home screen.
-- Pressing Home returns to the dialer when Android delivers a HOME intent to the launcher.
-- Menu is accessible directly from the dialer.
-- Favorites, Contacts and Recents remain accessible directly from the dialer.
-- Removed the separate clock/status home page.
-- Removed all launcher notification-count UI.
-- Removed the NotificationListenerService and notification-access option entirely.
-- Android's normal notification shade remains available by swiping down from the top.
-- Settings remains behind Menu -> Options -> Launcher Settings.
+Snake is deliberately tucked away under `Menu -> Options -> Snake`; it is not shown on the main Home/Menu screen and does not run when you are outside the game.
 
-## Existing features
+### Snake gameplay
 
-- Real Android HOME launcher
-- Retro monochrome themes
-- Text-only app menu with user-selected visible apps
-- Favorites from starred Android contacts
-- Full contacts list with T9 search
-- Contact call/message actions
-- Optional recent-call list (requires call-log permission)
-- Dial pad that hands calls to Android's system dialer
-- No network permission
-- No analytics
-- No background worker or polling service
-- Haptics off by default
+- Black-and-white retro board and controls.
+- D-pad movement only; no swipe controls.
+- Center button starts/pauses/resumes/restarts.
+- Snake grows by one segment after eating food.
+- Food is always placed on a free cell.
+- Game over when the snake hits the outer wall, an obstacle, or its own tail.
+- 180-degree direction reversals are blocked.
+- Score and persistent local high score.
+- Starts slowly and speeds up gradually, with a capped maximum speed.
+- 3-2-1 countdown before a new game and after resume.
+- Pauses automatically when the launcher loses window focus, the activity pauses, the notification shade takes focus, or another app/call interrupts play.
+- Game state is discarded when you leave Snake; high score remains saved.
+- Optional short food beep, OFF by default.
+- Snake forces portrait orientation only while the game is open.
+- No network, ads, online leaderboard, achievements, skins, power-ups, or background service.
+
+### Level progression
+
+- Level 1 / score 0–9: open board.
+- Level 2 / score 10–19: one short wall appears.
+- Level 3 / score 20–29: the obstacle layout changes to a longer wall.
+- Level 4 / score 30+: two short wall segments are used.
+- A short `LEVEL` overlay pauses play when the board changes.
+- Wall candidates are chosen only when they do not overlap the snake/food and are not immediately beside the snake's head.
+
+## Launcher features
+
+- Real Android HOME launcher.
+- Menu-first Home screen.
+- Dial pad opens only from the `Dial` softkey.
+- Dialer with direct CALL button.
+- Up to 8 starred Favorites plus More Contacts.
+- Full contacts list with T9 search.
+- Optional Recents.
+- T9 app search from Menu.
+- Classic, Green, Amber, Night, and true Monochrome themes.
+- User-selected visible apps.
+- Direct call support after one-time Phone permission.
+- Launcher-level optional double-tap screen lock.
+- No notification-listener service; use Android's normal pull-down notification shade.
+- No network permission.
+- No analytics.
+- No background worker/polling service.
+- Haptics off by default.
 
 ## Permissions
 
 - `READ_CONTACTS` — requested only when Contacts/Favorites are used.
 - `READ_CALL_LOG` — requested only when Recents is opened.
-
-There is no notification-listener permission/service in V1.4.
+- `CALL_PHONE` — requested only when direct calling is first used.
+- Device Administrator — optional, used only for double-tap-to-lock.
+- Snake requires no additional Android permission.
 
 ## Build
 
-The existing GitHub Actions `android.yml` from the previous version does not need to change.
-
-Build command:
+The existing GitHub Actions `android.yml` does not need to change.
 
 ```bash
 gradle :app:assembleDebug
