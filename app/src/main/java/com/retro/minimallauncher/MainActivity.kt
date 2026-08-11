@@ -225,6 +225,7 @@ private fun MenuScreen(
     onHomeSettings: () -> Unit
 ) {
     val feedback = LocalHapticFeedback.current
+    val context = LocalContext.current
     fun buzz() { if (haptics) feedback.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
 
     Column(modifier = Modifier.fillMaxSize().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -242,7 +243,7 @@ private fun MenuScreen(
                         val index = apps.indexOf(app)
                         val selected = index == selectedIndex
                         Row(
-                            modifier = Modifier.fillMaxWidth().background(if (selected) theme.fg else Color.Transparent).clickable { launchApp(LocalContext.current, app) }.padding(horizontal = 10.dp, vertical = 12.dp),
+                            modifier = Modifier.fillMaxWidth().background(if (selected) theme.fg else Color.Transparent).clickable { launchApp(context, app) }.padding(horizontal = 10.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(if (selected) "▶" else " ", color = if (selected) theme.bg else theme.fg, fontFamily = FontFamily.Monospace)
